@@ -1,9 +1,11 @@
 from fastapi import FastAPI, UploadFile, File
 from pydantic import BaseModel
 import shutil
+import os
 
 from ai.gemini_service import ask_gemini
 from ai.gemini_multimodal import analyze_image
+from rag.rag_service import answer_from_document
 
 
 app = FastAPI(
@@ -15,6 +17,10 @@ app = FastAPI(
 
 class QueryRequest(BaseModel):
     prompt: str
+
+
+class DocumentQuestion(BaseModel):
+    question: str
 
 
 @app.get("/")
@@ -52,10 +58,33 @@ def analyze_uploaded_image(
     with open(image_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    result = analyze_image(image_path, prompt)
+    try:
+        result = analyze_image(image_path, prompt)
+
+        return {
+            "success": True,
+            "filename": file.filename,
+            "response": result
+        }
+
+    finally:
+        if os.path.exists(image_path):
+            os.remove(image_path)
+
+
+@app.post("/ask-document")
+def ask_document(request: DocumentQuestion):
+    vector_store_path = "tests/vector_store.json"
+
+    result = answer_from_document(
+        request.question,
+        vector_store_path,
+        top_k=2
+    )
 
     return {
         "success": True,
-        "filename": file.filename,
-        "response": result
+        "question": request.question,
+        "answer": result["answer"],
+        "sources": result["sources"]
     }
